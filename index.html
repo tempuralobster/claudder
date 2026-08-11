@@ -145,6 +145,40 @@
   }
   .tl-auth-btn:hover { background: #1a91da; }
   .tl-auth-status { margin-top: 14px; font-size: 12px; color: #b34747; min-height: 16px; }
+  .tl-puzzle { margin: 18px auto 4px; max-width: 280px; }
+  .tl-puzzle-header { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #657786; margin-bottom: 8px; padding: 0 2px; }
+  .tl-puzzle-title { font-weight: 700; color: #14171a; }
+  .tl-puzzle-grid { position: relative; background: #eef3f5; border-radius: 12px; padding: 6px; margin: 0 auto; }
+  .tl-puzzle-grid.tl-puzzle-shake { animation: tl-puzzle-shake 0.26s ease-in-out; }
+  @keyframes tl-puzzle-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+  }
+  .tl-puzzle-cell {
+    position: absolute; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; background: #ffffff; border-radius: 8px; cursor: pointer; user-select: none;
+    transition: left 0.22s ease, top 0.28s ease, opacity 0.25s ease, transform 0.15s ease, background 0.15s ease;
+  }
+  .tl-puzzle-cell:hover { background: #f5f8fa; }
+  .tl-puzzle-cell.tl-puzzle-selected { background: #eaf6fd; box-shadow: inset 0 0 0 2px #1da1f2; transform: scale(0.92); }
+  .tl-puzzle-cell.tl-puzzle-hint-pulse { animation: tl-puzzle-hint-pulse 1s ease-in-out infinite; }
+  @keyframes tl-puzzle-hint-pulse { 0%, 100% { background: #ffffff; } 50% { background: #cdeefb; } }
+  .tl-puzzle-cell.tl-puzzle-pop { animation: tl-puzzle-pop 0.26s ease-in forwards; pointer-events: none; }
+  @keyframes tl-puzzle-pop {
+    0% { transform: scale(1) rotate(0deg); opacity: 1; }
+    40% { transform: scale(1.35) rotate(12deg); opacity: 1; }
+    100% { transform: scale(0) rotate(25deg); opacity: 0; }
+  }
+  .tl-puzzle-hint { text-align: center; font-size: 11px; color: #8899a6; margin-top: 8px; }
+  .tl-puzzle-badge { position: absolute; right: -3px; bottom: -3px; font-size: 12px; line-height: 1; filter: drop-shadow(0 0 1px rgba(0,0,0,0.5)); pointer-events: none; }
+  .tl-puzzle-cell.tl-puzzle-special-lineH, .tl-puzzle-cell.tl-puzzle-special-lineV { box-shadow: inset 0 0 0 2px #1da1f2; }
+  .tl-puzzle-cell.tl-puzzle-special-wrapped { box-shadow: inset 0 0 0 2px #e0447e; }
+  .tl-puzzle-cell.tl-puzzle-special-flyer { box-shadow: inset 0 0 0 2px #ffb400; }
+  .tl-puzzle-cell.tl-puzzle-special-colorbomb { background: linear-gradient(135deg, #ff6b6b, #feca57, #48dbfb, #1dd1a1); }
+  .tl-puzzle-heli { position: absolute; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: left 0.26s ease, top 0.26s ease; pointer-events: none; z-index: 5; }
 </style>
 </head>
 <body>
@@ -181,7 +215,18 @@
       </div>
     </div>
     <div class="tl-feed" id="tl-feed">
-      <div class="tl-loading"><div class="tl-spinner"></div>みんなの投稿を集めてるところ…🐸</div>
+      <div class="tl-loading">
+        <div class="tl-spinner"></div>
+        みんなの投稿を集めてるところ…🐸
+        <div class="tl-puzzle" id="tl-puzzle">
+          <div class="tl-puzzle-header">
+            <span class="tl-puzzle-title">🍓 暇つぶしパズル</span>
+            <span class="tl-puzzle-score">スコア: 0</span>
+          </div>
+          <div class="tl-puzzle-grid"></div>
+          <div class="tl-puzzle-hint">隣同士をタップして入れ替えてね</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -292,6 +337,565 @@
       .replace(/^投稿日時[:：].*$/m, '')
       .trim();
     return c.length > 280 ? c.slice(0, 280) + '…' : c;
+  }
+
+  // 読み込み待ちの間に遊べる、ちょっとした3マッチパズル
+  function initMatch3(root, onInteract) {
+    const SIZE = 6;
+    const CELL = 40;
+    const GAP = 4;
+    const PAD = 6;
+    const STEP = CELL + GAP;
+    const BOARD = SIZE * CELL + (SIZE - 1) * GAP + PAD * 2;
+    const TYPES = ['🍓', '🍋', '🍇', '🍊', '🫐', '🍒'];
+
+    const gridEl = root.querySelector('.tl-puzzle-grid');
+    if (!gridEl) return;
+    gridEl.style.width = BOARD + 'px';
+    gridEl.style.height = BOARD + 'px';
+
+    let grid = [];
+    let score = 0;
+    let selected = null;
+    let busy = false;
+    let hintTimer = null;
+    let hintCells = null;
+
+    function wait(ms) { return new Promise(res => setTimeout(res, ms)); }
+    function randType() { return TYPES[Math.floor(Math.random() * TYPES.length)]; }
+    function posFor(r, c) { return { left: PAD + c * STEP, top: PAD + r * STEP }; }
+    function cellKey(r, c) { return r + ',' + c; }
+
+    function createTileEl(type, r, c) {
+      const el = document.createElement('div');
+      el.className = 'tl-puzzle-cell';
+      el.textContent = type;
+      el.dataset.r = r;
+      el.dataset.c = c;
+      gridEl.appendChild(el);
+      return el;
+    }
+
+    function setTilePos(tile, r, c, opts) {
+      tile.el.dataset.r = r;
+      tile.el.dataset.c = c;
+      const { left, top } = posFor(r, c);
+      tile.el.style.left = left + 'px';
+      if (opts && opts.fromAbove != null) {
+        tile.el.style.top = (top - opts.fromAbove * STEP) + 'px';
+        tile.el.style.opacity = '0';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!root.isConnected) return;
+            tile.el.style.top = top + 'px';
+            tile.el.style.opacity = '1';
+          });
+        });
+      } else {
+        tile.el.style.top = top + 'px';
+      }
+    }
+
+    function applySpecialVisual(tile, kind) {
+      tile.special = kind;
+      tile.el.classList.add('tl-puzzle-special-' + kind);
+      const badge = document.createElement('span');
+      badge.className = 'tl-puzzle-badge';
+      badge.textContent = kind === 'lineH' ? '↔️' : kind === 'lineV' ? '↕️' : kind === 'wrapped' ? '💥' : kind === 'flyer' ? '🚁' : '🌈';
+      tile.el.appendChild(badge);
+      if (kind === 'colorbomb') tile.type = null;
+    }
+
+    function initGrid() {
+      grid = [];
+      for (let r = 0; r < SIZE; r++) {
+        const row = [];
+        for (let c = 0; c < SIZE; c++) {
+          let type;
+          do {
+            type = randType();
+          } while (
+            (c >= 2 && row[c - 1].type === type && row[c - 2].type === type) ||
+            (r >= 2 && grid[r - 1][c].type === type && grid[r - 2][c].type === type)
+          );
+          const el = createTileEl(type, r, c);
+          const tile = { type, special: null, el };
+          setTilePos(tile, r, c);
+          row.push(tile);
+        }
+        grid.push(row);
+      }
+    }
+
+    function findMatches() {
+      const matched = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+      for (let r = 0; r < SIZE; r++) {
+        let runStart = 0;
+        for (let c = 1; c <= SIZE; c++) {
+          const cur = c < SIZE ? grid[r][c] : null;
+          const start = grid[r][runStart];
+          if (cur && start && cur.type != null && cur.type === start.type) continue;
+          if (c - runStart >= 3 && start && start.type != null) for (let k = runStart; k < c; k++) matched[r][k] = true;
+          runStart = c;
+        }
+      }
+      for (let c = 0; c < SIZE; c++) {
+        let runStart = 0;
+        for (let r = 1; r <= SIZE; r++) {
+          const cur = r < SIZE ? grid[r][c] : null;
+          const start = grid[runStart][c];
+          if (cur && start && cur.type != null && cur.type === start.type) continue;
+          if (r - runStart >= 3 && start && start.type != null) for (let k = runStart; k < r; k++) matched[k][c] = true;
+          runStart = r;
+        }
+      }
+      return matched;
+    }
+
+    function findSquares() {
+      const squares = [];
+      const claimed = new Set();
+      for (let r = 0; r < SIZE - 1; r++) {
+        for (let c = 0; c < SIZE - 1; c++) {
+          const a = grid[r][c], b = grid[r][c + 1], cc = grid[r + 1][c], d = grid[r + 1][c + 1];
+          if (a && b && cc && d && a.type != null && a.type === b.type && a.type === cc.type && a.type === d.type) {
+            const cells = [{ r, c }, { r, c: c + 1 }, { r: r + 1, c }, { r: r + 1, c: c + 1 }];
+            if (cells.every(cell => !claimed.has(cellKey(cell.r, cell.c)))) {
+              cells.forEach(cell => claimed.add(cellKey(cell.r, cell.c)));
+              squares.push({ cells, type: a.type });
+            }
+          }
+        }
+      }
+      return squares;
+    }
+
+    function findMatchGroups() {
+      const matchedMask = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+      for (let r = 0; r < SIZE; r++) {
+        let runStart = 0;
+        for (let c = 1; c <= SIZE; c++) {
+          const cur = c < SIZE ? grid[r][c] : null;
+          const start = grid[r][runStart];
+          if (cur && start && cur.type != null && cur.type === start.type) continue;
+          if (c - runStart >= 3 && start && start.type != null) for (let k = runStart; k < c; k++) matchedMask[r][k] = true;
+          runStart = c;
+        }
+      }
+      for (let c = 0; c < SIZE; c++) {
+        let runStart = 0;
+        for (let r = 1; r <= SIZE; r++) {
+          const cur = r < SIZE ? grid[r][c] : null;
+          const start = grid[runStart][c];
+          if (cur && start && cur.type != null && cur.type === start.type) continue;
+          if (r - runStart >= 3 && start && start.type != null) for (let k = runStart; k < r; k++) matchedMask[k][c] = true;
+          runStart = r;
+        }
+      }
+      const visited = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+      const groups = [];
+      for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+          if (matchedMask[r][c] && !visited[r][c] && grid[r][c]) {
+            const type = grid[r][c].type;
+            const stack = [{ r, c }];
+            const cells = [];
+            visited[r][c] = true;
+            while (stack.length) {
+              const cur = stack.pop();
+              cells.push(cur);
+              const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+              for (const [dr, dc] of dirs) {
+                const nr = cur.r + dr, nc = cur.c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && matchedMask[nr][nc] && !visited[nr][nc] && grid[nr][nc] && grid[nr][nc].type === type) {
+                  visited[nr][nc] = true;
+                  stack.push({ r: nr, c: nc });
+                }
+              }
+            }
+            const rs = cells.map(x => x.r), cs = cells.map(x => x.c);
+            const minR = Math.min(...rs), maxR = Math.max(...rs), minC = Math.min(...cs), maxC = Math.max(...cs);
+            const W = maxC - minC + 1, H = maxR - minR + 1, n = cells.length;
+            let shape = 'line3';
+            if (n >= 5 && (H === 1 || W === 1)) shape = 'line5plus';
+            else if (n === 4 && H === 1 && W === 4) shape = 'line4h';
+            else if (n === 4 && W === 1 && H === 4) shape = 'line4v';
+            else if (n >= 5) shape = 'lshape';
+            groups.push({ cells, type, shape });
+          }
+        }
+      }
+      return groups;
+    }
+
+    function shapeToKind(shape) {
+      if (shape === 'line4h') return 'lineV';
+      if (shape === 'line4v') return 'lineH';
+      if (shape === 'line5plus') return 'colorbomb';
+      if (shape === 'lshape') return 'wrapped';
+      return null;
+    }
+
+    function collectSpecialEffectCells(tile, r, c) {
+      if (!tile || !tile.special) return [];
+      const kind = tile.special;
+      const cells = [];
+      if (kind === 'lineV') {
+        for (let rr = 0; rr < SIZE; rr++) if (rr !== r) cells.push({ r: rr, c });
+      } else if (kind === 'lineH') {
+        for (let cc = 0; cc < SIZE; cc++) if (cc !== c) cells.push({ r, c: cc });
+      } else if (kind === 'wrapped') {
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr, cc = c + dc;
+          if (rr >= 0 && rr < SIZE && cc >= 0 && cc < SIZE && !(dr === 0 && dc === 0)) cells.push({ r: rr, c: cc });
+        }
+      } else if (kind === 'flyer') {
+        const candidates = [];
+        for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) {
+          if (!(rr === r && cc === c) && grid[rr][cc]) candidates.push({ r: rr, c: cc });
+        }
+        for (let i = candidates.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+        cells.push(...candidates.slice(0, 3));
+      }
+      return cells;
+    }
+
+    function updateScore() {
+      const scoreEl = root.querySelector('.tl-puzzle-score');
+      if (scoreEl) scoreEl.textContent = `スコア: ${score}`;
+    }
+
+    function explodeAndClear(cells) {
+      if (!cells.length) return Promise.resolve();
+      return new Promise(resolve => {
+        cells.forEach(({ r, c }) => {
+          const tile = grid[r][c];
+          if (tile) tile.el.classList.add('tl-puzzle-pop');
+        });
+        gridEl.classList.add('tl-puzzle-shake');
+        setTimeout(() => {
+          if (!root.isConnected) { resolve(); return; }
+          gridEl.classList.remove('tl-puzzle-shake');
+          cells.forEach(({ r, c }) => {
+            const tile = grid[r][c];
+            if (tile) { tile.el.remove(); grid[r][c] = null; }
+          });
+          resolve();
+        }, 260);
+      });
+    }
+
+    function applyGravityAnimated() {
+      for (let c = 0; c < SIZE; c++) {
+        let write = SIZE - 1;
+        for (let r = SIZE - 1; r >= 0; r--) {
+          if (grid[r][c]) {
+            if (write !== r) {
+              const tile = grid[r][c];
+              grid[write][c] = tile;
+              grid[r][c] = null;
+              setTilePos(tile, write, c);
+            }
+            write--;
+          }
+        }
+        const newCount = write + 1;
+        for (let r = write; r >= 0; r--) {
+          const type = randType();
+          const el = createTileEl(type, r, c);
+          const tile = { type, special: null, el };
+          grid[r][c] = tile;
+          setTilePos(tile, r, c, { fromAbove: newCount - r });
+        }
+      }
+    }
+
+    function flyHelicopter(fromR, fromC, toR, toC) {
+      return new Promise(resolve => {
+        if (!root.isConnected) { resolve(); return; }
+        const startPos = posFor(fromR, fromC);
+        const endPos = posFor(toR, toC);
+        const heli = document.createElement('div');
+        heli.className = 'tl-puzzle-heli';
+        heli.textContent = '🚁';
+        heli.style.left = startPos.left + 'px';
+        heli.style.top = startPos.top + 'px';
+        gridEl.appendChild(heli);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!root.isConnected) { heli.remove(); resolve(); return; }
+            heli.style.left = endPos.left + 'px';
+            heli.style.top = endPos.top + 'px';
+          });
+        });
+        setTimeout(() => {
+          heli.remove();
+          resolve();
+        }, 280);
+      });
+    }
+
+    async function resolveSquares(squares) {
+      const clearCells = [];
+      const specialsToCreate = [];
+      squares.forEach(sq => {
+        const keep = sq.cells[0];
+        specialsToCreate.push({ r: keep.r, c: keep.c, kind: 'flyer' });
+        sq.cells.slice(1).forEach(cell => clearCells.push(cell));
+      });
+      score += clearCells.length * 10;
+      updateScore();
+      await explodeAndClear(clearCells);
+      if (!root.isConnected) return;
+      specialsToCreate.forEach(({ r, c, kind }) => {
+        const tile = grid[r][c];
+        if (tile) applySpecialVisual(tile, kind);
+      });
+      applyGravityAnimated();
+      await wait(320);
+    }
+
+    async function resolveGroups(groups) {
+      const clearMap = new Map();
+      const specialsToCreate = [];
+      groups.forEach(g => {
+        const kind = shapeToKind(g.shape);
+        const keepIdx = Math.floor(g.cells.length / 2);
+        g.cells.forEach((cell, idx) => {
+          const key = cellKey(cell.r, cell.c);
+          if (kind && idx === keepIdx) {
+            specialsToCreate.push({ r: cell.r, c: cell.c, kind });
+          } else if (!clearMap.has(key)) {
+            clearMap.set(key, cell);
+          }
+        });
+      });
+      const queue = Array.from(clearMap.values());
+      const processed = new Set();
+      while (queue.length) {
+        const { r, c } = queue.pop();
+        const key = cellKey(r, c);
+        if (processed.has(key)) continue;
+        processed.add(key);
+        const tile = grid[r][c];
+        if (tile && tile.special) {
+          collectSpecialEffectCells(tile, r, c).forEach(cell => {
+            const k = cellKey(cell.r, cell.c);
+            if (!clearMap.has(k)) { clearMap.set(k, cell); queue.push(cell); }
+          });
+        }
+      }
+      const finalSpecials = specialsToCreate.filter(s => !clearMap.has(cellKey(s.r, s.c)));
+      score += clearMap.size * 10;
+      updateScore();
+      await explodeAndClear(Array.from(clearMap.values()));
+      if (!root.isConnected) return;
+      finalSpecials.forEach(({ r, c, kind }) => {
+        const tile = grid[r][c];
+        if (tile) applySpecialVisual(tile, kind);
+      });
+      applyGravityAnimated();
+      await wait(320);
+    }
+
+    async function processBoardUntilStable() {
+      while (root.isConnected) {
+        const squares = findSquares();
+        if (squares.length) { await resolveSquares(squares); continue; }
+        const groups = findMatchGroups();
+        if (groups.length) { await resolveGroups(groups); continue; }
+        break;
+      }
+    }
+
+    function isAdjacent(a, b) { return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1; }
+
+    function swapTiles(a, b) {
+      const ta = grid[a.r][a.c];
+      const tb = grid[b.r][b.c];
+      grid[a.r][a.c] = tb;
+      grid[b.r][b.c] = ta;
+      setTilePos(tb, a.r, a.c);
+      setTilePos(ta, b.r, b.c);
+    }
+
+    function highlightSelected() {
+      gridEl.querySelectorAll('.tl-puzzle-cell.tl-puzzle-selected').forEach(el => el.classList.remove('tl-puzzle-selected'));
+      if (selected) {
+        const tile = grid[selected.r][selected.c];
+        if (tile) tile.el.classList.add('tl-puzzle-selected');
+      }
+    }
+
+    function wouldMatch(r1, c1, r2, c2) {
+      const a = grid[r1][c1], b = grid[r2][c2];
+      if (!a || !b) return false;
+      grid[r1][c1] = b; grid[r2][c2] = a;
+      const has = findMatches().some(row => row.some(v => v));
+      grid[r1][c1] = a; grid[r2][c2] = b;
+      return has;
+    }
+
+    function findHintMove() {
+      for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+          if (c + 1 < SIZE && wouldMatch(r, c, r, c + 1)) return { a: { r, c }, b: { r, c: c + 1 } };
+          if (r + 1 < SIZE && wouldMatch(r, c, r + 1, c)) return { a: { r, c }, b: { r: r + 1, c } };
+        }
+      }
+      return null;
+    }
+
+    function clearHint() {
+      if (hintCells) {
+        [hintCells.a, hintCells.b].forEach(pos => {
+          const tile = grid[pos.r] && grid[pos.r][pos.c];
+          if (tile) tile.el.classList.remove('tl-puzzle-hint-pulse');
+        });
+        hintCells = null;
+      }
+    }
+
+    function showHint() {
+      if (!root.isConnected) return;
+      if (busy) { hintTimer = setTimeout(showHint, 1000); return; }
+      const move = findHintMove();
+      if (!move) return;
+      hintCells = move;
+      const ta = grid[move.a.r][move.a.c];
+      const tb = grid[move.b.r][move.b.c];
+      if (ta) ta.el.classList.add('tl-puzzle-hint-pulse');
+      if (tb) tb.el.classList.add('tl-puzzle-hint-pulse');
+    }
+
+    function resetHintTimer() {
+      clearHint();
+      if (hintTimer) clearTimeout(hintTimer);
+      if (!root.isConnected) return;
+      hintTimer = setTimeout(showHint, 3000);
+    }
+
+    async function activateColorBomb(bombPos, otherTile) {
+      const targetType = otherTile.type;
+      const cells = [];
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+        const t = grid[r][c];
+        if (t && (t.type === targetType || (r === bombPos.r && c === bombPos.c))) cells.push({ r, c });
+      }
+      score += cells.length * 10;
+      updateScore();
+      await explodeAndClear(cells);
+      if (!root.isConnected) return;
+      applyGravityAnimated();
+      await wait(320);
+      await processBoardUntilStable();
+    }
+
+    async function activateGenericSpecial(a, b, tileAWasSpecial, tileBWasSpecial) {
+      const clearMap = new Map();
+      const queue = [];
+      if (tileAWasSpecial) { clearMap.set(cellKey(b.r, b.c), { r: b.r, c: b.c }); queue.push({ r: b.r, c: b.c }); }
+      if (tileBWasSpecial) { clearMap.set(cellKey(a.r, a.c), { r: a.r, c: a.c }); queue.push({ r: a.r, c: a.c }); }
+
+      for (const pos of [...queue]) {
+        const t = grid[pos.r][pos.c];
+        if (t && t.special === 'flyer') {
+          const targets = collectSpecialEffectCells(t, pos.r, pos.c);
+          for (const tgt of targets) {
+            await flyHelicopter(pos.r, pos.c, tgt.r, tgt.c);
+            const key = cellKey(tgt.r, tgt.c);
+            if (!clearMap.has(key)) clearMap.set(key, tgt);
+          }
+        }
+      }
+
+      const processed = new Set();
+      const queue2 = Array.from(clearMap.values());
+      while (queue2.length) {
+        const { r, c } = queue2.pop();
+        const key = cellKey(r, c);
+        if (processed.has(key)) continue;
+        processed.add(key);
+        const tile = grid[r][c];
+        if (tile && tile.special && tile.special !== 'flyer') {
+          collectSpecialEffectCells(tile, r, c).forEach(cell => {
+            const k = cellKey(cell.r, cell.c);
+            if (!clearMap.has(k)) { clearMap.set(k, cell); queue2.push(cell); }
+          });
+        }
+      }
+
+      score += clearMap.size * 10;
+      updateScore();
+      await explodeAndClear(Array.from(clearMap.values()));
+      if (!root.isConnected) return;
+      applyGravityAnimated();
+      await wait(320);
+      await processBoardUntilStable();
+    }
+
+    async function handleClick(ev) {
+      if (typeof onInteract === 'function') onInteract();
+      if (busy || !root.isConnected) return;
+      const cell = ev.target.closest('.tl-puzzle-cell');
+      if (!cell) return;
+      const pos = { r: Number(cell.dataset.r), c: Number(cell.dataset.c) };
+      resetHintTimer();
+
+      if (!selected) { selected = pos; highlightSelected(); return; }
+      if (selected.r === pos.r && selected.c === pos.c) { selected = null; highlightSelected(); return; }
+      if (!isAdjacent(selected, pos)) { selected = pos; highlightSelected(); return; }
+
+      const a = selected, b = pos;
+      selected = null;
+      highlightSelected();
+
+      const tileA = grid[a.r][a.c];
+      const tileB = grid[b.r][b.c];
+
+      busy = true;
+
+      if (tileA.special === 'colorbomb' || tileB.special === 'colorbomb') {
+        const bombIsA = tileA.special === 'colorbomb';
+        const bombPos = bombIsA ? a : b;
+        const otherTile = bombIsA ? tileB : tileA;
+        await activateColorBomb(bombPos, otherTile);
+        busy = false;
+        resetHintTimer();
+        return;
+      }
+
+      if (tileA.special || tileB.special) {
+        swapTiles(a, b);
+        await wait(220);
+        if (!root.isConnected) return;
+        await activateGenericSpecial(a, b, !!tileA.special, !!tileB.special);
+        busy = false;
+        resetHintTimer();
+        return;
+      }
+
+      swapTiles(a, b);
+      await wait(220);
+      if (!root.isConnected) return;
+      const hasMatch = findMatches().some(row => row.some(v => v)) || findSquares().length > 0;
+      if (hasMatch) {
+        await processBoardUntilStable();
+      } else {
+        swapTiles(a, b);
+        await wait(220);
+      }
+      busy = false;
+      resetHintTimer();
+    }
+
+    initGrid();
+    gridEl.addEventListener('click', handleClick);
+    updateScore();
+    resetHintTimer();
   }
 
   // ---- Google認証 ----
@@ -414,9 +1018,60 @@
   }
 
   // ---- タイムライン読み込み ----
-  async function loadAll() {
+  // データの読み込みが終わっても、パズルで遊んでいる間はタイムラインに切り替えない。
+  // 「触らずに3秒経過」したタイミングで初めて切り替える（アイドル判定）。
+  const PUZZLE_IDLE_MS = 3000;
+  let puzzleGateTimer = null;
+  let puzzleDataReady = false;
+  let puzzleLastInteract = 0;
+  let pendingFeedHtml = null;
+
+  function notePuzzleInteract() {
+    puzzleLastInteract = Date.now();
+  }
+
+  function startPuzzleGate() {
+    puzzleDataReady = false;
+    pendingFeedHtml = null;
+    puzzleLastInteract = Date.now();
+    if (puzzleGateTimer) clearInterval(puzzleGateTimer);
+    puzzleGateTimer = setInterval(checkPuzzleGate, 400);
+  }
+
+  function checkPuzzleGate() {
+    if (!puzzleDataReady) return;
+    if (Date.now() - puzzleLastInteract < PUZZLE_IDLE_MS) return;
+    if (puzzleGateTimer) { clearInterval(puzzleGateTimer); puzzleGateTimer = null; }
     const feedEl = document.getElementById('tl-feed');
-    feedEl.innerHTML = '<div class="tl-loading"><div class="tl-spinner"></div>みんなの投稿を集めてるところ…🐸</div>';
+    if (pendingFeedHtml !== null && feedEl) {
+      feedEl.innerHTML = pendingFeedHtml;
+      pendingFeedHtml = null;
+    } else {
+      render();
+    }
+  }
+
+  function showLoading() {
+    const feedEl = document.getElementById('tl-feed');
+    feedEl.innerHTML = `
+      <div class="tl-loading">
+        <div class="tl-spinner"></div>
+        みんなの投稿を集めてるところ…🐸
+        <div class="tl-puzzle" id="tl-puzzle">
+          <div class="tl-puzzle-header">
+            <span class="tl-puzzle-title">🍓 暇つぶしパズル</span>
+            <span class="tl-puzzle-score">スコア: 0</span>
+          </div>
+          <div class="tl-puzzle-grid"></div>
+          <div class="tl-puzzle-hint">隣同士をタップして入れ替えてね</div>
+        </div>
+      </div>`;
+    initMatch3(document.getElementById('tl-puzzle'), notePuzzleInteract);
+    startPuzzleGate();
+  }
+
+  async function loadAll() {
+    showLoading();
 
     const cutoffIso = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
@@ -433,9 +1088,11 @@
     }
 
     if (files.length === 0) {
-      feedEl.innerHTML = errors.length
+      pendingFeedHtml = errors.length
         ? '<div class="tl-error">読み込みエラー<br>' + errors.map(escapeHtml).join('<br>') + '</div>'
         : '<div class="tl-empty">まだ投稿がないみたい🐣</div>';
+      puzzleDataReady = true;
+      checkPuzzleGate();
       return;
     }
 
@@ -464,7 +1121,9 @@
       };
     });
 
-    render();
+    pendingFeedHtml = null;
+    puzzleDataReady = true;
+    checkPuzzleGate();
   }
 
   function ensureEngagement(id) {
