@@ -52,6 +52,7 @@
     background: #ffffff; color: #1da1f2; font-size: 19px; display: flex; align-items: center;
     justify-content: center; cursor: pointer; transition: transform 0.15s ease, background 0.15s ease; padding: 0;
   }
+  .tl-refresh img { width: 26px; height: 26px; object-fit: contain; display: block; }
   .tl-refresh:hover { background: #eaf6fd; }
   .tl-refresh:active { transform: scale(0.92); }
   .tl-refresh.tl-spin { animation: tl-spin 0.8s linear; }
@@ -148,7 +149,7 @@
   .tl-puzzle { margin: 18px auto 4px; max-width: 280px; }
   .tl-puzzle-header { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #657786; margin-bottom: 8px; padding: 0 2px; }
   .tl-puzzle-title { font-weight: 700; color: #14171a; }
-  .tl-puzzle-grid { position: relative; background: #eef3f5; border-radius: 12px; padding: 6px; margin: 0 auto; }
+  .tl-puzzle-grid { position: relative; background: #eef3f5; border-radius: 12px; padding: 6px; margin: 0 auto; touch-action: none; }
   .tl-puzzle-grid.tl-puzzle-shake { animation: tl-puzzle-shake 0.26s ease-in-out; }
   @keyframes tl-puzzle-shake {
     0%, 100% { transform: translateX(0); }
@@ -159,7 +160,7 @@
   }
   .tl-puzzle-cell {
     position: absolute; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
-    font-size: 20px; background: #ffffff; border-radius: 8px; cursor: pointer; user-select: none;
+    font-size: 20px; background: #ffffff; border-radius: 8px; cursor: pointer; user-select: none; touch-action: none;
     transition: left 0.22s ease, top 0.28s ease, opacity 0.25s ease, transform 0.15s ease, background 0.15s ease;
   }
   .tl-puzzle-cell:hover { background: #f5f8fa; }
@@ -192,7 +193,7 @@
       </div>
     </div>
     <input id="tl-filter" class="tl-filter" type="text" placeholder="🔍 キーワードで絞り込み" />
-    <button id="tl-refresh-btn" class="tl-refresh" title="更新する">🔄</button>
+    <button id="tl-refresh-btn" class="tl-refresh" title="更新する"><img src="data:image/gif;base64,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" alt="更新"></button>
   </div>
 
   <div id="tl-auth" class="tl-auth">
@@ -224,7 +225,7 @@
             <span class="tl-puzzle-score">スコア: 0</span>
           </div>
           <div class="tl-puzzle-grid"></div>
-          <div class="tl-puzzle-hint">隣同士をタップして入れ替えてね</div>
+          <div class="tl-puzzle-hint">隣同士をタップ、またはフリックで入れ替えてね</div>
         </div>
       </div>
     </div>
@@ -339,7 +340,7 @@
     return c.length > 280 ? c.slice(0, 280) + '…' : c;
   }
 
-  // 読み込み待ちの間に遊べる、ちょっとした3マッチパズル
+  // 読み込み待ちの間に遊べる、ちょっとした3マッチパズル（タップ操作＋フリック操作の両対応）
   function initMatch3(root, onInteract) {
     const SIZE = 6;
     const CELL = 40;
@@ -348,6 +349,7 @@
     const STEP = CELL + GAP;
     const BOARD = SIZE * CELL + (SIZE - 1) * GAP + PAD * 2;
     const TYPES = ['🍓', '🍋', '🍇', '🍊', '🫐', '🍒'];
+    const FLICK_THRESHOLD = 16;
 
     const gridEl = root.querySelector('.tl-puzzle-grid');
     if (!gridEl) return;
@@ -360,6 +362,7 @@
     let busy = false;
     let hintTimer = null;
     let hintCells = null;
+    let dragState = null;
 
     function wait(ms) { return new Promise(res => setTimeout(res, ms)); }
     function randType() { return TYPES[Math.floor(Math.random() * TYPES.length)]; }
@@ -837,24 +840,17 @@
       await processBoardUntilStable();
     }
 
-    async function handleClick(ev) {
-      if (typeof onInteract === 'function') onInteract();
+    // 2つのマス(a,b)の入れ替えを試みる（マッチ成立すれば確定、しなければ元に戻す）。
+    // タップ操作・フリック操作どちらからも共通で呼ばれる。
+    async function attemptSwap(a, b) {
       if (busy || !root.isConnected) return;
-      const cell = ev.target.closest('.tl-puzzle-cell');
-      if (!cell) return;
-      const pos = { r: Number(cell.dataset.r), c: Number(cell.dataset.c) };
-      resetHintTimer();
-
-      if (!selected) { selected = pos; highlightSelected(); return; }
-      if (selected.r === pos.r && selected.c === pos.c) { selected = null; highlightSelected(); return; }
-      if (!isAdjacent(selected, pos)) { selected = pos; highlightSelected(); return; }
-
-      const a = selected, b = pos;
       selected = null;
       highlightSelected();
+      resetHintTimer();
 
-      const tileA = grid[a.r][a.c];
-      const tileB = grid[b.r][b.c];
+      const tileA = grid[a.r] && grid[a.r][a.c];
+      const tileB = grid[b.r] && grid[b.r][b.c];
+      if (!tileA || !tileB) return;
 
       busy = true;
 
@@ -892,10 +888,97 @@
       resetHintTimer();
     }
 
+    // 通常のタップ操作（1つ目をタップして選択→隣を2つ目にタップして入れ替え）
+    function handleTap(pos) {
+      if (busy || !root.isConnected) return;
+      resetHintTimer();
+      if (!selected) { selected = pos; highlightSelected(); return; }
+      if (selected.r === pos.r && selected.c === pos.c) { selected = null; highlightSelected(); return; }
+      if (!isAdjacent(selected, pos)) { selected = pos; highlightSelected(); return; }
+      const a = selected, b = pos;
+      attemptSwap(a, b);
+    }
+
+    // フリック（スワイプ）操作：マスを指で押したまま上下左右にずらすと、その方向のマスと即座に入れ替わる
+    function handlePointerDown(ev) {
+      if (typeof onInteract === 'function') onInteract();
+      if (busy || !root.isConnected) return;
+      const cellEl = ev.target.closest('.tl-puzzle-cell');
+      if (!cellEl) return;
+      const pos = { r: Number(cellEl.dataset.r), c: Number(cellEl.dataset.c) };
+      dragState = { start: pos, x: ev.clientX, y: ev.clientY, moved: false, pointerId: ev.pointerId };
+      try { gridEl.setPointerCapture(ev.pointerId); } catch (e) {}
+    }
+
+    function handlePointerMove(ev) {
+      if (!dragState || dragState.moved || dragState.pointerId !== ev.pointerId) return;
+      const dx = ev.clientX - dragState.x;
+      const dy = ev.clientY - dragState.y;
+      if (Math.abs(dx) < FLICK_THRESHOLD && Math.abs(dy) < FLICK_THRESHOLD) return;
+      dragState.moved = true;
+      let dr = 0, dc = 0;
+      if (Math.abs(dx) > Math.abs(dy)) { dc = dx > 0 ? 1 : -1; } else { dr = dy > 0 ? 1 : -1; }
+      const target = { r: dragState.start.r + dr, c: dragState.start.c + dc };
+      const from = dragState.start;
+      dragState = null;
+      if (target.r < 0 || target.r >= SIZE || target.c < 0 || target.c >= SIZE) return;
+      selected = null;
+      highlightSelected();
+      attemptSwap(from, target);
+    }
+
+    function handlePointerUp(ev) {
+      if (!dragState || dragState.pointerId !== ev.pointerId) return;
+      const wasMoved = dragState.moved;
+      const pos = dragState.start;
+      dragState = null;
+      if (!wasMoved) handleTap(pos);
+    }
+
+    function handlePointerCancel(ev) {
+      if (dragState && dragState.pointerId === ev.pointerId) dragState = null;
+    }
+
     initGrid();
-    gridEl.addEventListener('click', handleClick);
+    gridEl.addEventListener('pointerdown', handlePointerDown);
+    gridEl.addEventListener('pointermove', handlePointerMove);
+    gridEl.addEventListener('pointerup', handlePointerUp);
+    gridEl.addEventListener('pointercancel', handlePointerCancel);
     updateScore();
     resetHintTimer();
+  }
+
+  // データの読み込みが終わっても、パズルで遊んでいる間はタイムラインに切り替えない。
+  // 「触らずに3秒経過」したタイミングで初めて切り替える（アイドル判定）。
+  const PUZZLE_IDLE_MS = 3000;
+  let puzzleGateTimer = null;
+  let puzzleDataReady = false;
+  let puzzleLastInteract = 0;
+  let pendingFeedHtml = null;
+
+  function notePuzzleInteract() {
+    puzzleLastInteract = Date.now();
+  }
+
+  function startPuzzleGate() {
+    puzzleDataReady = false;
+    pendingFeedHtml = null;
+    puzzleLastInteract = Date.now();
+    if (puzzleGateTimer) clearInterval(puzzleGateTimer);
+    puzzleGateTimer = setInterval(checkPuzzleGate, 400);
+  }
+
+  function checkPuzzleGate() {
+    if (!puzzleDataReady) return;
+    if (Date.now() - puzzleLastInteract < PUZZLE_IDLE_MS) return;
+    if (puzzleGateTimer) { clearInterval(puzzleGateTimer); puzzleGateTimer = null; }
+    const feedEl = document.getElementById('tl-feed');
+    if (pendingFeedHtml !== null && feedEl) {
+      feedEl.innerHTML = pendingFeedHtml;
+      pendingFeedHtml = null;
+    } else {
+      render();
+    }
   }
 
   // ---- Google認証 ----
@@ -1018,39 +1101,6 @@
   }
 
   // ---- タイムライン読み込み ----
-  // データの読み込みが終わっても、パズルで遊んでいる間はタイムラインに切り替えない。
-  // 「触らずに3秒経過」したタイミングで初めて切り替える（アイドル判定）。
-  const PUZZLE_IDLE_MS = 3000;
-  let puzzleGateTimer = null;
-  let puzzleDataReady = false;
-  let puzzleLastInteract = 0;
-  let pendingFeedHtml = null;
-
-  function notePuzzleInteract() {
-    puzzleLastInteract = Date.now();
-  }
-
-  function startPuzzleGate() {
-    puzzleDataReady = false;
-    pendingFeedHtml = null;
-    puzzleLastInteract = Date.now();
-    if (puzzleGateTimer) clearInterval(puzzleGateTimer);
-    puzzleGateTimer = setInterval(checkPuzzleGate, 400);
-  }
-
-  function checkPuzzleGate() {
-    if (!puzzleDataReady) return;
-    if (Date.now() - puzzleLastInteract < PUZZLE_IDLE_MS) return;
-    if (puzzleGateTimer) { clearInterval(puzzleGateTimer); puzzleGateTimer = null; }
-    const feedEl = document.getElementById('tl-feed');
-    if (pendingFeedHtml !== null && feedEl) {
-      feedEl.innerHTML = pendingFeedHtml;
-      pendingFeedHtml = null;
-    } else {
-      render();
-    }
-  }
-
   function showLoading() {
     const feedEl = document.getElementById('tl-feed');
     feedEl.innerHTML = `
@@ -1063,7 +1113,7 @@
             <span class="tl-puzzle-score">スコア: 0</span>
           </div>
           <div class="tl-puzzle-grid"></div>
-          <div class="tl-puzzle-hint">隣同士をタップして入れ替えてね</div>
+          <div class="tl-puzzle-hint">隣同士をタップ、またはフリックで入れ替えてね</div>
         </div>
       </div>`;
     initMatch3(document.getElementById('tl-puzzle'), notePuzzleInteract);
