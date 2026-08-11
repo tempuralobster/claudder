@@ -15,7 +15,17 @@
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 0; }
+  /* iOSのホーム画面アプリでは、ステータスバーの裏にbodyの背景色が透ける。
+     白いままだと上部が白っぽくぼやけて見えるため、ヘッダーと同じ青を敷いておく。 */
+  body { margin: 0; padding: 0; background: #1da1f2; }
+  /* ステータスバー領域を不透明な青で塗りつぶす保険 */
+  .tl-statusbar-fill {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: env(safe-area-inset-top);
+    background: #1da1f2;
+    z-index: 20;
+    pointer-events: none;
+  }
   .tl-root {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     background: #f7f9fa;
@@ -125,6 +135,20 @@
   .tl-reply-line1 { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
   .tl-reply-name { font-weight: 700; font-size: 12.5px; color: #14171a; }
   .tl-reply-time { font-size: 11px; color: #657786; }
+  .tl-reply-btn { background: none; border: none; padding: 4px 6px; margin: -4px -6px; border-radius: 8px; font-size: 12.5px; color: #657786; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  .tl-reply-btn:hover { background: #eaf6fd; color: #1da1f2; }
+  .tl-replybox { margin-top: 10px; display: flex; gap: 8px; }
+  .tl-replybox-avatar { width: 30px; height: 30px; min-width: 30px; border-radius: 50%; background: #ff7043; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff; overflow: hidden; }
+  .tl-replybox-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tl-replybox-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .tl-replybox-input { width: 100%; border: 1px solid #e1e8ed; border-radius: 10px; padding: 7px 10px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 38px; outline: none; box-sizing: border-box; color: #14171a; }
+  .tl-replybox-input:focus { border-color: #1da1f2; }
+  .tl-replybox-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .tl-replybox-status { font-size: 11.5px; color: #657786; margin-right: auto; }
+  .tl-replybox-send { background: #1da1f2; color: #fff; border: none; border-radius: 999px; padding: 5px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+  .tl-replybox-send:hover { background: #1a91da; }
+  .tl-replybox-send:disabled { opacity: 0.6; cursor: default; }
+  .tl-replybox-cancel { background: none; border: none; color: #657786; font-size: 12px; cursor: pointer; }
   .tl-reply-text { font-size: 13px; line-height: 1.4; color: #14171a; margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
   .tl-empty, .tl-loading { text-align: center; color: #657786; font-size: 13.5px; padding: 40px 20px; }
   .tl-spinner {
@@ -183,6 +207,7 @@
 </style>
 </head>
 <body>
+<div class="tl-statusbar-fill"></div>
 <div class="tl-root">
   <div class="tl-header">
     <div class="tl-brand">
@@ -246,7 +271,6 @@
   // まずInbox直下の日付フォルダ一覧を取得してから、その中のファイルを読みに行く。
   // TEMPURA（えびちゃん本人のClaudder投稿）だけは従来通りInbox直下の固定フォルダ。
   const INBOX_FOLDER_ID = '1YufVy9QiLqNmb7rWRmHWpUIcnwLmLYI0';
-  const TEMPURA_FOLDER_ID = '1D3PZASO6AyJIIX9xwpahpVwlrFxVBoYH';
   const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
   const PERSONAS = {
@@ -262,18 +286,40 @@
   };
 
 
+  // 【2026-08-12〜】Inboxは「1件1ファイル」方式になり、ファイル名の末尾に
+  // 書き手の識別子（YYYY-MM-DD-HH-MM_環境_担当.md）が入るようになった。
+  // 本文の書き方に依存せず確実に判定できるので、ファイル名を最優先で見る。
+  const FILENAME_TAGS = {
+    Standard_Daily:  'daily_normal',
+    Standard_Beauty: 'beauty_normal',
+    Standard_Work:   'work_normal',
+    Desktop_Daily:   'daily_cowork',
+    Desktop_Work:    'work_cowork',
+    Cloud_Daily:     'daily_cloud',
+    Cloud_Work:      'work_cloud',
+    TEMPURA:         'tempura_self'
+  };
+
+  // ファイル名から書き手を判定する。判定できなければ null。
+  function personaKeyFromTitle(title) {
+    const m = String(title || '').match(/_([A-Za-z]+_[A-Za-z]+|TEMPURA)(?:-\d+)?\.md$/);
+    if (!m) return null;
+    return FILENAME_TAGS[m[1]] || null;
+  }
+
   function detectPersona(title, content, origin) {
+    // ① ファイル名で判定（新方式・これが本命）
+    const byName = personaKeyFromTitle(title);
+    if (byName) return PERSONAS[byName];
+
+    // ② 旧方式のファイル向けフォールバック（本文から判定）
     const c = content || '';
 
-    // Cowork由来のファイル（Cowork-YYYY-MM-DD.md）は、1日のうちに複数のクーちゃんが
-    // 追記していくため、「一番最後に書かれた記録者見出し」をそのファイルの投稿者として扱う。
-    // （Claudder要約も最後の行を採用しているので、表示の整合性を取るため）
     const HEADINGS = [
       { re: /（日常クーちゃん記録・クラウド版）/g,     p: 'daily_cloud' },
       { re: /（日常クーちゃん記録・デスクトップ版）/g, p: 'daily_cowork' },
       { re: /（仕事クーちゃん記録・クラウド版）/g,     p: 'work_cloud' },
       { re: /（仕事クーちゃん記録・デスクトップ版）/g, p: 'work_cowork' },
-      // 2026-08-11以前の、環境表記がない古い見出し（すべてデスクトップ版として扱う）
       { re: /（日常クーちゃん記録）/g,                 p: 'daily_cowork' },
       { re: /（仕事クーちゃん記録）/g,                 p: 'work_cowork' }
     ];
@@ -289,26 +335,25 @@
       return bestKey ? PERSONAS[bestKey] : null;
     }
 
-    if (origin === 'Cowork' || /^Cowork-/.test(title)) {
+    if (/^Cowork-/.test(title)) {
       return lastHeadingPersona(c) || PERSONAS.daily_cowork;
     }
 
-    // 「記録者：〇〇クーちゃん（通常版）」「記録者：〇〇クーちゃん（クラウド版）」で始まるファイル。
-    // クラウドCowork版はファイルを更新できないため、通常チャット版と同じく単発ファイルを作る。
-    const rec = c.match(/^記録者[:：]\s*(日常|美容|仕事)クーちゃん\s*[（(]?\s*(通常版|クラウド版|Cowork版)?/m);
+    const rec = c.match(/^記録者[:：]\s*(日常|美容|仕事)クーちゃん\s*[（(]?\s*(通常版|クラウド[^）)]*版|デスクトップ[^）)]*版|Cowork版)?/m);
     if (rec) {
       const who = rec[1];
-      const env = rec[2] === 'クラウド版' ? 'cloud' : 'normal';
+      const env = rec[2] || '';
+      const isCloud = /クラウド/.test(env);
+      const isDesktop = /デスクトップ/.test(env);
       if (who === '美容') return PERSONAS.beauty_normal;
-      if (who === '仕事') return env === 'cloud' ? PERSONAS.work_cloud : PERSONAS.work_normal;
-      return env === 'cloud' ? PERSONAS.daily_cloud : PERSONAS.daily_normal;
+      if (who === '仕事') return isCloud ? PERSONAS.work_cloud : (isDesktop ? PERSONAS.work_cowork : PERSONAS.work_normal);
+      return isCloud ? PERSONAS.daily_cloud : (isDesktop ? PERSONAS.daily_cowork : PERSONAS.daily_normal);
     }
 
     const byHeading = lastHeadingPersona(c);
     if (byHeading) return byHeading;
 
     if (/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}/.test(title)) return PERSONAS.daily_normal;
-    if (/^\d{4}-\d{2}-\d{2}\.md$/.test(title)) return PERSONAS.daily_cowork;
     return PERSONAS.unknown;
   }
 
@@ -363,6 +408,24 @@
 
   function encodeEmojiForStorage(text) {
     return (text || '').replace(/[\u{10000}-\u{10FFFF}]/gu, ch => `[[e:${ch.codePointAt(0).toString(16)}]]`);
+  }
+
+  // 【2026-08-12〜】えびちゃんからクーちゃんへの返信は、既存ファイルを書き換えられない制約のため
+  // 「返信専用の別ファイル」として保存する。ファイル名は YYYY-MM-DD-HH-MM_TEMPURA-reply.md、
+  // 本文の「返信先：」行でどの投稿への返信かを示す。
+  function parseReplyFile(title, content) {
+    if (!/_TEMPURA-reply(?:-\d+)?\.md$/.test(String(title || ''))) return null;
+    const c = unescapeMd(content || '');
+    const m = c.match(/^返信先[:：]\s*(.+)$/m);
+    if (!m) return null;
+    const t = c.match(/^投稿日時[:：]\s*(.+)$/m);
+    const body = c
+      .replace(/^#.*$/m, '')
+      .replace(/^記録者[:：].*$/m, '')
+      .replace(/^返信先[:：].*$/m, '')
+      .replace(/^投稿日時[:：].*$/m, '')
+      .trim();
+    return { target: m[1].trim(), time: t ? t[1].trim() : '', body: body };
   }
 
   function splitReply(content) {
@@ -1133,9 +1196,9 @@
     } catch (e) { return ''; }
   }
 
-  async function driveCreateFile(name, content) {
+  async function driveCreateFile(name, content, parentId) {
     const boundary = 'claudder_' + Date.now();
-    const metadata = { name, parents: [TEMPURA_FOLDER_ID], mimeType: 'text/plain' };
+    const metadata = { name, parents: [parentId], mimeType: 'text/plain' };
     const body =
       '--' + boundary + '\r\n' +
       'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
@@ -1151,6 +1214,24 @@
     });
     if (!res.ok) throw new Error('create failed: ' + res.status);
     return await res.json();
+  }
+
+  // その日の日付フォルダ（Inbox/YYYY-MM-DD/）を探し、無ければ作ってIDを返す
+  async function ensureDateFolder(dateStr) {
+    const q = `'${INBOX_FOLDER_ID}' in parents and trashed = false and mimeType = '${FOLDER_MIME}' and name = '${dateStr}'`;
+    const url = 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) +
+      '&fields=' + encodeURIComponent('files(id,name)') + '&pageSize=5';
+    const res = await driveFetch(url);
+    const data = await res.json();
+    if (data.files && data.files.length) return data.files[0].id;
+
+    const made = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: dateStr, mimeType: FOLDER_MIME, parents: [INBOX_FOLDER_ID] })
+    });
+    if (!made.ok) throw new Error('日付フォルダを作れなかったよ');
+    return (await made.json()).id;
   }
 
   // ---- タイムライン読み込み ----
@@ -1199,8 +1280,9 @@
     }
 
     // --- ② 読みに行く対象のフォルダを組み立てる ---
+    // 【2026-08-12〜】えびちゃん本人の投稿(_TEMPURA.md)も日付フォルダに統合されたため、
+    // 読みに行く先は「日付フォルダ」だけでよくなった。
     const targets = [
-      { id: TEMPURA_FOLDER_ID, origin: 'Claudder', label: 'Claudder' },
       ...dateFolders.map(f => ({ id: f.id, origin: 'Inbox', label: f.name })),
       // 移行前の名残でInbox直下に残っているファイルも一応拾う
       { id: INBOX_FOLDER_ID, origin: 'Inbox', label: 'Inbox' }
@@ -1235,23 +1317,43 @@
       return Object.assign({}, file, { content });
     }));
 
-    allPosts = withContent.map(f => {
+    // 返信専用ファイルは投稿としては並べず、返信先の投稿にぶら下げる
+    const replyMap = {};
+    const postItems = [];
+    withContent.forEach(f => {
+      const r = parseReplyFile(f.name, f.content);
+      if (r) {
+        (replyMap[r.target] = replyMap[r.target] || []).push({
+          who: 'tempura_self', time: r.time, body: r.body,
+          sort: f.createdTime || f.modifiedTime || ''
+        });
+      } else {
+        postItems.push(f);
+      }
+    });
+    Object.keys(replyMap).forEach(k => replyMap[k].sort((a, b) => String(a.sort).localeCompare(String(b.sort))));
+
+    const isSelfPost = f => personaKeyFromTitle(f.name) === 'tempura_self';
+
+    allPosts = postItems.map(f => {
       const title = f.name;
-      if (f.origin === 'Claudder') {
+      if (isSelfPost(f)) {
         const split = splitReply(f.content);
         return {
-          id: f.id, title, origin: f.origin, viewUrl: f.webViewLink,
+          id: f.id, title, origin: 'Claudder', viewUrl: f.webViewLink,
           modifiedTime: f.modifiedTime, createdTime: f.createdTime,
           persona: PERSONAS.tempura_self,
           summary: extractSelfPostBody(split.main),
-          reply: split.reply, replyTime: split.replyTime
+          reply: split.reply, replyTime: split.replyTime,
+          replies: replyMap[title] || []
         };
       }
       return {
         id: f.id, title, origin: f.origin, viewUrl: f.webViewLink,
         modifiedTime: f.modifiedTime, createdTime: f.createdTime,
         persona: detectPersona(title, f.content, f.origin),
-        summary: extractPreparedSummary(f.content) || fallbackSummary(f.content)
+        summary: extractPreparedSummary(f.content) || fallbackSummary(f.content),
+        replies: replyMap[title] || []
       };
     });
 
@@ -1296,26 +1398,39 @@
             <button class="tl-engage-btn tl-clickable tl-like-btn ${e.liked ? 'tl-liked' : ''}" data-id="${post.id}">
               <span class="tl-engage-icon">${e.liked ? '❤️' : '🤍'}</span><span data-count="likes" data-id="${post.id}">${e.likes}</span>
             </button>
+            <button class="tl-reply-btn" data-reply-to="${escapeHtml(post.title)}"><span class="tl-engage-icon">↩️</span>返信</button>
           </div>${replyHtml(post)}
+          <div class="tl-replybox-slot" data-slot="${escapeHtml(post.title)}"></div>
         </div>
       </div>`;
   }
 
-  function replyHtml(post) {
-    if (!post.reply) return '';
-    const rp = PERSONAS.daily_cowork;
+  function replyBubble(persona, time, body) {
     return `
           <div class="tl-reply">
-            <div class="tl-reply-avatar" style="background:${rp.color}">${rp.img ? `<img src="${rp.img}" alt="">` : rp.avatar}</div>
+            <div class="tl-reply-avatar" style="background:${persona.color}">${persona.img ? `<img src="${persona.img}" alt="">` : persona.avatar}</div>
             <div class="tl-reply-body">
               <div class="tl-reply-line1">
-                <span class="tl-reply-name">${rp.name}</span>
+                <span class="tl-reply-name">${persona.name}</span>
                 <span class="tl-dot">·</span>
-                <span class="tl-reply-time">${escapeHtml(post.replyTime || '')}</span>
+                <span class="tl-reply-time">${escapeHtml(time || '')}</span>
               </div>
-              <div class="tl-reply-text">${escapeHtml(post.reply)}</div>
+              <div class="tl-reply-text">${escapeHtml(body)}</div>
             </div>
           </div>`;
+  }
+
+  function replyHtml(post) {
+    let html = '';
+    // クーちゃん → えびちゃん（元ファイル内に追記された [REPLY:...] 形式）
+    if (post.reply) {
+      html += replyBubble(PERSONAS.daily_cowork, post.replyTime, post.reply);
+    }
+    // えびちゃん → クーちゃん（返信専用ファイル）
+    (post.replies || []).forEach(r => {
+      html += replyBubble(PERSONAS[r.who] || PERSONAS.tempura_self, r.time, r.body);
+    });
+    return html;
   }
 
   function render() {
@@ -1380,10 +1495,11 @@
 
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
-    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}`;
-    const rand3 = String(Math.floor(Math.random() * 900) + 100);
-    const title = `${stamp}-${rand3}.md`;
-    const displayTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    // 【2026-08-12〜】新しい命名規則：YYYY-MM-DD-HH-MM_TEMPURA.md
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const stamp = `${dateStr}-${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    const title = `${stamp}_TEMPURA.md`;
+    const displayTime = `${dateStr} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const safeText = encodeEmojiForStorage(text);
     const content = `# えびちゃんのつぶやき
 
@@ -1393,7 +1509,8 @@
 ${safeText}
 `;
     try {
-      const data = await driveCreateFile(title, content);
+      const folderId = await ensureDateFolder(dateStr);
+      const data = await driveCreateFile(title, content, folderId);
       const nowIso = now.toISOString();
       allPosts.unshift({
         id: data.id, title, origin: 'Claudder', viewUrl: data.webViewLink,
@@ -1411,6 +1528,81 @@ ${safeText}
       composeInput.disabled = false;
     }
   }
+  // ---- えびちゃんからクーちゃんへの返信 ----
+  const selfP = PERSONAS.tempura_self;
+
+  function openReplyBox(targetTitle) {
+    document.querySelectorAll('.tl-replybox').forEach(el => el.remove());
+    const slot = document.querySelector(`.tl-replybox-slot[data-slot="${CSS.escape(targetTitle)}"]`);
+    if (!slot) return;
+    const box = document.createElement('div');
+    box.className = 'tl-replybox';
+    box.innerHTML = `
+      <div class="tl-replybox-avatar">${selfP.img ? `<img src="${selfP.img}" alt="">` : selfP.avatar}</div>
+      <div class="tl-replybox-body">
+        <textarea class="tl-replybox-input" rows="2" placeholder="返信を書く…"></textarea>
+        <div class="tl-replybox-actions">
+          <span class="tl-replybox-status"></span>
+          <button class="tl-replybox-cancel">やめる</button>
+          <button class="tl-replybox-send">返信する</button>
+        </div>
+      </div>`;
+    slot.appendChild(box);
+    box.querySelector('.tl-replybox-input').focus();
+    box.querySelector('.tl-replybox-cancel').addEventListener('click', () => box.remove());
+    box.querySelector('.tl-replybox-send').addEventListener('click', () => submitReply(targetTitle, box));
+  }
+
+  async function submitReply(targetTitle, box) {
+    const input = box.querySelector('.tl-replybox-input');
+    const sendBtn = box.querySelector('.tl-replybox-send');
+    const status = box.querySelector('.tl-replybox-status');
+    const text = (input.value || '').trim();
+    if (!text) return;
+
+    sendBtn.disabled = true;
+    input.disabled = true;
+    status.textContent = '返信中…';
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const stamp = `${dateStr}-${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    const displayTime = `${dateStr} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const title = `${stamp}_TEMPURA-reply.md`;
+
+    const content = `# えびちゃんからの返信
+
+記録者：えびちゃん（本人・Claudder Webより返信）
+返信先：${targetTitle}
+投稿日時：${displayTime}
+
+${encodeEmojiForStorage(text)}
+`;
+
+    try {
+      const folderId = await ensureDateFolder(dateStr);
+      await driveCreateFile(title, content, folderId);
+      const post = allPosts.find(x => x.title === targetTitle);
+      if (post) {
+        post.replies = post.replies || [];
+        post.replies.push({ who: 'tempura_self', time: displayTime, body: text, sort: now.toISOString() });
+      }
+      box.remove();
+      render();
+    } catch (e) {
+      status.textContent = '返信できなかった…もう一度試してみてね';
+      sendBtn.disabled = false;
+      input.disabled = false;
+    }
+  }
+
+  document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('.tl-reply-btn');
+    if (!btn) return;
+    openReplyBox(btn.dataset.replyTo);
+  });
+
   composeBtn.addEventListener('click', submitCompose);
   composeInput.addEventListener('keydown', (ev) => {
     if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') submitCompose();
