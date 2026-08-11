@@ -313,9 +313,13 @@
   }
 
   function extractPreparedSummary(content) {
-    const m = (content || '').match(/^Claudder要約[:：]\s*(.+)$/m);
-    if (!m) return null;
-    const text = unescapeMd(m[1]).trim();
+    // 同じファイルに複数回追記されるログ（Cowork-YYYY-MM-DD.mdなど）では、
+    // 一番「最後」に書かれたClaudder要約行を使う（＝最新の更新内容を表示するため）
+    const re = /^Claudder要約[:：]\s*(.+)$/gm;
+    let m, last = null;
+    while ((m = re.exec(content || '')) !== null) last = m;
+    if (!last) return null;
+    const text = unescapeMd(last[1]).trim();
     return text ? text : null;
   }
 
@@ -1064,7 +1068,7 @@
   }
 
   async function driveList(folderId, cutoffIso) {
-    const q = `'${folderId}' in parents and modifiedTime > '${cutoffIso}' and trashed = false`;
+    const q = `'${folderId}' in parents and modifiedTime > '${cutoffIso}' and trashed = false and mimeType != 'application/vnd.google-apps.folder'`;
     const url = 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) +
       '&fields=' + encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,webViewLink)') +
       '&pageSize=50&orderBy=modifiedTime desc';
